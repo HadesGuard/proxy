@@ -1054,6 +1054,153 @@ test_proxy() {
   wait_for_enter
 }
 
+test_all_proxies() {
+  print_header "TEST TOÀN BỘ PROXY"
+  
+  local available_files=()
+  local available_formats=()
+  local available_format_types=()
+  local available_counts=()
+  local i
+
+  for i in "${!PROXY_FILES[@]}"; do
+    local file="${PROXY_FILES[$i]}"
+    if file_exists_and_not_empty "$file"; then
+      available_files+=("$file")
+      available_formats+=("${PROXY_FORMATS[$i]}")
+      available_format_types+=("${PROXY_FORMAT_TYPES[$i]}")
+      local count
+      count=$(wc -l < "$file" 2>/dev/null || echo "0")
+      available_counts+=("$count")
+    fi
+  done
+
+  if [ ${#available_files[@]} -eq 0 ]; then
+    print_error "Không tìm thấy proxy list để test. Hãy chạy 'Setup Proxy' trước."
+    echo
+    wait_for_enter
+    return 1
+  fi
+
+  if ! is_service_active; then
+    print_warning "Service 3proxy hiện không chạy. Kết quả test có thể thất bại."
+    echo
+  fi
+
+  if ! command_exists curl; then
+    print_warning "curl không có, không thể test proxy."
+    echo
+    wait_for_enter
+    return 1
+  fi
+
+  echo "Chọn nguồn proxy để test toàn bộ:"
+  for i in "${!available_files[@]}"; do
+    local option=$((i + 1))
+    echo "  $option. ${available_formats[$i]} (file: ${available_files[$i]}, ${available_counts[$i]} dòng)"
+  done
+  echo "  0. Hủy"
+  echo
+
+  local selection
+  read -p "Lựa chọn (0-${#available_files[@]}, mặc định 1): " selection
+  if [ -z "$selection" ]; then
+    selection=1
+  fi
+
+  if ! [[ "$selection" =~ ^[0-9]+$ ]]; then
+    print_error "Lựa chọn không hợp lệ."
+    echo
+    wait_for_enter
+    return 1
+  fi
+
+  if [ "$selection" -eq 0 ]; then
+    print_info "Đã hủy."
+    echo
+    wait_for_enter
+    return 0
+  fi
+
+  if [ "$selection" -lt 1 ] || [ "$selection" -gt ${#available_files[@]} ]; then
+    print_error "Lựa chọn vượt phạm vi."
+    echo
+    wait_for_enter
+    return 1
+  fi
+
+  local selected_index=$((selection - 1))
+  local selected_file="${available_files[$selected_index]}"
+  local selected_format="${available_formats[$selected_index]}"
+  local selected_format_type="${available_format_types[$selected_index]}"
+  local selected_count="${available_counts[$selected_index]}"
+
+  echo
+  echo "File: $selected_file"
+  echo "Định dạng: $selected_format"
+  echo "Số lượng proxy: $selected_count"
+  echo "Endpoint test: ${PROXY_TEST_URL}"
+  echo
+
+  if [ "$selected_count" -eq 0 ]; then
+    print_error "Không có dòng hợp lệ trong file proxy."
+    echo
+    wait_for_enter
+    return 1
+  fi
+
+  local ok_count=0
+  local fail_count=0
+
+  for (( line_num=1; line_num<=selected_count; line_num++ )); do
+    local entry
+    entry=$(sed -n "${line_num}p" "$selected_file" 2>/dev/null || echo "")
+    [ -z "$entry" ] && continue
+
+    local parsed
+    parsed=$(parse_proxy_entry "$entry" "$selected_format_type") || {
+      print_error "Dòng $line_num: Định dạng không hợp lệ."
+      fail_count=$((fail_count + 1))
+      continue
+    }
+
+    IFS=';' read -r proxy_scheme proxy_host_port proxy_credentials <<< "$parsed"
+    local masked_display
+    masked_display=$(mask_proxy_display "$proxy_credentials" "$proxy_host_port")
+
+    echo "[$line_num/$selected_count] Testing: $masked_display"
+
+    local curl_cmd=(curl -s --max-time "${PROXY_TEST_TIMEOUT}" --proxy "${proxy_scheme}://${proxy_host_port}")
+    if [ -n "$proxy_credentials" ]; then
+      curl_cmd+=(--proxy-user "$proxy_credentials")
+    fi
+    curl_cmd+=("${PROXY_TEST_URL}")
+
+    local response
+    response=$("${curl_cmd[@]}" 2>&1)
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ] && [ -n "$response" ]; then
+      if [[ "$response" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        print_success "  OK - IP: $response"
+      else
+        print_success "  OK - Response: $response"
+      fi
+      ok_count=$((ok_count + 1))
+    else
+      print_error "  FAIL (exit $exit_code)"
+      fail_count=$((fail_count + 1))
+    fi
+  done
+
+  echo
+  echo "Tổng kết:"
+  echo "  Thành công: $ok_count"
+  echo "  Thất bại:   $fail_count"
+  echo
+  wait_for_enter
+}
+
 delete_proxy_files() {
   print_header "XÓA PROXY LIST FILES"
   
@@ -1091,9 +1238,10 @@ show_menu() {
   echo "7. Khởi động lại service"
   echo "8. Xem logs"
   echo "9. Test proxy"
-  echo "10. Xóa proxy list files"
-  echo "11. Xem cấu hình 3proxy"
-  echo "12. Cập nhật script"
+  echo "10. Test toàn bộ proxy"
+  echo "11. Xóa proxy list files"
+  echo "12. Xem cấu hình 3proxy"
+  echo "13. Cập nhật script"
   echo "0. Thoát"
   echo
 }
@@ -1111,9 +1259,10 @@ handle_menu_choice() {
     7) restart_service ;;
     8) view_logs ;;
     9) test_proxy ;;
-    10) delete_proxy_files ;;
-    11) view_proxy_config ;;
-    12) update_all_scripts ;;
+    10) test_all_proxies ;;
+    11) delete_proxy_files ;;
+    12) view_proxy_config ;;
+    13) update_all_scripts ;;
     0)
       print_info "Thoát..."
       exit 0
@@ -1136,7 +1285,7 @@ main() {
   # Main loop
   while true; do
     show_menu
-    read -p "Chọn tùy chọn (0-12): " choice
+    read -p "Chọn tùy chọn (0-13): " choice
     handle_menu_choice "$choice"
   done
 }

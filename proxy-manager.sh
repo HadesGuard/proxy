@@ -18,6 +18,8 @@ readonly NC='\033[0m' # No Color
 
 # Paths
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+readonly SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_NAME}"
 readonly GITHUB_REPO="https://raw.githubusercontent.com/HadesGuard/proxy/main"
 readonly SERVICE_NAME="3proxy"
 readonly TMP_SCRIPT_DIR="/tmp/proxy-scripts"
@@ -121,6 +123,24 @@ file_exists_and_not_empty() {
 # Check if command exists
 command_exists() {
   command -v "$1" >/dev/null 2>&1
+}
+
+resolve_script_path() {
+  local resolved=""
+
+  if command_exists readlink; then
+    resolved=$(readlink -f "$SCRIPT_PATH" 2>/dev/null || echo "")
+  fi
+
+  if [ -z "$resolved" ] && command_exists realpath; then
+    resolved=$(realpath "$SCRIPT_PATH" 2>/dev/null || echo "")
+  fi
+
+  if [ -z "$resolved" ]; then
+    resolved="$SCRIPT_PATH"
+  fi
+
+  echo "$resolved"
 }
 
 # ============================================================================
@@ -273,7 +293,7 @@ check_update() {
   
   # Use realpath to handle symlinks correctly
   local current_script
-  current_script=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
+  current_script=$(resolve_script_path)
   local latest_url="${GITHUB_REPO}/proxy-manager.sh"
   local tmp_latest="/tmp/proxy-manager-latest.sh"
   
@@ -290,7 +310,7 @@ check_update() {
 force_update_script() {
   # Use realpath to handle symlinks correctly
   local current_script
-  current_script=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
+  current_script=$(resolve_script_path)
   local latest_url="${GITHUB_REPO}/proxy-manager.sh"
   local tmp_latest="/tmp/proxy-manager-latest.sh"
   

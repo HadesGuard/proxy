@@ -36,7 +36,9 @@ proxy-manager
 - ✅ Quản lý service (start/stop/restart)
 - ✅ Xem logs
 - ✅ Test proxy
+- ✅ Test toàn bộ proxy
 - ✅ Xóa proxy list files
+- ✅ Tuỳ chọn nhập hoặc tự động sinh username/password khi setup
 
 ## Files
 
@@ -51,6 +53,4 @@ Script `proxy-manager.sh` tự động kiểm tra update mỗi lần chạy bằ
 - So sánh commit hash hiện tại với commit hash mới nhất trên GitHub
 - Sử dụng GitHub API để lấy latest commit hash
 - Tự động phát hiện update ngay cả khi quên tăng version number
-
-**Lưu ý:** Trước khi commit, chạy `./update-commit-hash.sh` để update commit hash vào script (hoặc dùng git pre-commit hook tự động).
 

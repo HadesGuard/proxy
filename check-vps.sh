@@ -2,6 +2,19 @@
 
 set -euo pipefail
 
+# Pull latest code from git if in a git repository
+if [ -d ".git" ] && command -v git >/dev/null 2>&1; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  cd "$SCRIPT_DIR" || exit 1
+  echo "[+] Đang pull code mới nhất từ git..."
+  if git pull >/dev/null 2>&1; then
+    echo "[+] Đã cập nhật code mới nhất."
+  else
+    echo "[!] Không thể pull code (có thể không có remote hoặc không có thay đổi). Tiếp tục với code hiện tại..."
+  fi
+  echo
+fi
+
 PROXY_PORTS=("3128" "8080" "8000" "1080")
 
 print_header() {

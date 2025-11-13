@@ -4,7 +4,7 @@ set -euo pipefail
 
 # Version & Commit Hash
 VERSION="1.0.0"
-COMMIT_HASH="af6203d"
+COMMIT_HASH="c3befbf"
 
 # Colors
 RED='\033[0;31m'

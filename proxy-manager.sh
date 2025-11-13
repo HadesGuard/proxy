@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Version & Commit Hash
+VERSION="1.0.0"
+COMMIT_HASH="c2846cf"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -20,11 +24,149 @@ PROXY_LIST_IPPORT="/root/proxies_ipport.txt"
 SERVICE_NAME="3proxy"
 TMP_SCRIPT_DIR="/tmp/proxy-scripts"
 
+# Function to get commit hash from script
+get_commit_hash() {
+  local script_file="$1"
+  if [ -f "$script_file" ]; then
+    # Try to get COMMIT_HASH from script
+    local hash=$(grep -m1 "^COMMIT_HASH=" "$script_file" 2>/dev/null | cut -d'"' -f2 || echo "")
+    if [ -n "$hash" ]; then
+      echo "$hash"
+      return 0
+    fi
+  fi
+  echo ""
+  return 1
+}
+
+# Function to get latest commit hash from GitHub
+get_latest_commit_hash() {
+  local repo="HadesGuard/proxy"
+  local branch="main"
+  
+  # Try GitHub API first
+  local api_url="https://api.github.com/repos/$repo/commits/$branch"
+  local hash=$(curl -sSL "$api_url" 2>/dev/null | grep -m1 '"sha"' | cut -d'"' -f4 | cut -c1-7 || echo "")
+  
+  if [ -n "$hash" ]; then
+    echo "$hash"
+    return 0
+  fi
+  
+  # Fallback: try to get from raw file (if we store it in a separate file)
+  # Or use file comparison as backup
+  echo ""
+  return 1
+}
+
+# Function to check and update manager script
+check_update() {
+  # Skip update check if running from local directory (development)
+  if [ "$SCRIPT_DIR" != "/usr/local/bin" ] && [ "$SCRIPT_DIR" != "$HOME/.local/bin" ]; then
+    return 0
+  fi
+  
+  local current_script="$0"
+  local latest_url="$GITHUB_REPO/proxy-manager.sh"
+  local tmp_latest="/tmp/proxy-manager-latest.sh"
+  
+  # Get current commit hash
+  local current_hash=$(get_commit_hash "$current_script")
+  
+  # Get latest commit hash from GitHub
+  local latest_hash=$(get_latest_commit_hash)
+  
+  # If we have both hashes, compare them
+  if [ -n "$current_hash" ] && [ -n "$latest_hash" ]; then
+    if [ "$current_hash" != "$latest_hash" ]; then
+      # Download latest version
+      if ! curl -sSL "$latest_url" -o "$tmp_latest" 2>/dev/null; then
+        return 1
+      fi
+      
+      # Verify the downloaded file has the expected hash
+      local downloaded_hash=$(get_commit_hash "$tmp_latest")
+      if [ "$downloaded_hash" = "$latest_hash" ] || [ -z "$downloaded_hash" ]; then
+        echo
+        print_warning "Có phiên bản mới của proxy-manager!"
+        echo "  Commit hiện tại: $current_hash"
+        echo "  Commit mới:      $latest_hash"
+        echo
+        read -p "Bạn có muốn cập nhật? (y/N): " update_confirm
+        
+        if [[ "$update_confirm" =~ ^[Yy]$ ]]; then
+          # Backup current version
+          cp "$current_script" "${current_script}.bak" 2>/dev/null || true
+          
+          # Install new version
+          if cp "$tmp_latest" "$current_script" 2>/dev/null; then
+            chmod +x "$current_script"
+            print_success "Đã cập nhật proxy-manager từ commit $current_hash lên $latest_hash!"
+            echo
+            read -p "Nhấn Enter để tiếp tục với phiên bản mới..."
+            # Reload script
+            exec "$current_script"
+          else
+            print_error "Không thể cập nhật. Cần quyền root hoặc quyền ghi."
+            rm -f "$tmp_latest"
+          fi
+        else
+          rm -f "$tmp_latest"
+        fi
+      else
+        rm -f "$tmp_latest"
+      fi
+      return 0
+    else
+      # Same commit hash, no update needed
+      return 0
+    fi
+  fi
+  
+  # Fallback: compare file content if hash comparison fails
+  if ! curl -sSL "$latest_url" -o "$tmp_latest" 2>/dev/null; then
+    return 1
+  fi
+  
+  if [ -f "$current_script" ] && [ -f "$tmp_latest" ]; then
+    if ! cmp -s "$current_script" "$tmp_latest"; then
+      echo
+      print_warning "Có phiên bản mới của proxy-manager!"
+      echo "  (Phát hiện bằng so sánh file)"
+      echo
+      read -p "Bạn có muốn cập nhật? (y/N): " update_confirm
+      
+      if [[ "$update_confirm" =~ ^[Yy]$ ]]; then
+        # Backup current version
+        cp "$current_script" "${current_script}.bak" 2>/dev/null || true
+        
+        # Install new version
+        if cp "$tmp_latest" "$current_script" 2>/dev/null; then
+          chmod +x "$current_script"
+          print_success "Đã cập nhật proxy-manager thành công!"
+          echo
+          read -p "Nhấn Enter để tiếp tục với phiên bản mới..."
+          # Reload script
+          exec "$current_script"
+        else
+          print_error "Không thể cập nhật. Cần quyền root hoặc quyền ghi."
+          rm -f "$tmp_latest"
+        fi
+      else
+        rm -f "$tmp_latest"
+      fi
+    else
+      rm -f "$tmp_latest"
+    fi
+  fi
+}
+
 # Function to get script (local first, then download from GitHub)
 get_script() {
   local script_name=$1
   local local_path="$SCRIPT_DIR/$script_name"
   local tmp_path="$TMP_SCRIPT_DIR/$script_name"
+  local latest_url="$GITHUB_REPO/$script_name"
   
   # Try local first
   if [ -f "$local_path" ]; then
@@ -32,20 +174,29 @@ get_script() {
     return 0
   fi
   
-  # Try tmp directory
+  # Check if we have a cached version and if it's up to date
   if [ -f "$tmp_path" ]; then
-    echo "$tmp_path"
-    return 0
+    # Check if cached version is recent (less than 1 hour old)
+    local cache_age=$(find "$tmp_path" -mmin +60 2>/dev/null | wc -l)
+    if [ "$cache_age" -eq 0 ]; then
+      echo "$tmp_path"
+      return 0
+    fi
   fi
   
   # Download from GitHub
   mkdir -p "$TMP_SCRIPT_DIR"
   echo -e "${YELLOW}[+] Đang tải $script_name từ GitHub...${NC}" >&2
-  if curl -sSL "$GITHUB_REPO/$script_name" -o "$tmp_path" 2>/dev/null; then
+  if curl -sSL "$latest_url" -o "$tmp_path" 2>/dev/null; then
     chmod +x "$tmp_path"
     echo "$tmp_path"
     return 0
   else
+    # Try cached version if download fails
+    if [ -f "$tmp_path" ]; then
+      echo "$tmp_path"
+      return 0
+    fi
     echo ""
     return 1
   fi
@@ -77,7 +228,7 @@ print_info() {
 
 show_menu() {
   clear
-  print_header "3PROXY MANAGER"
+  print_header "3PROXY MANAGER v$VERSION"
   echo "1. Kiểm tra VPS (Check VPS)"
   echo "2. Cài đặt/Tạo proxy mới (Setup Proxy)"
   echo "3. Xem danh sách proxy"
@@ -327,6 +478,9 @@ delete_proxy_files() {
   echo
   read -p "Nhấn Enter để tiếp tục..."
 }
+
+# Check for updates on startup
+check_update
 
 # Main loop
 while true; do

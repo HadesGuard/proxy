@@ -25,7 +25,7 @@ readonly SERVICE_NAME="3proxy"
 readonly TMP_SCRIPT_DIR="/tmp/proxy-scripts"
 readonly SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 readonly LOG_FILE="/etc/3proxy/logs/3proxy.log"
-readonly CONFIG_FILE="/etc/3proxy/3proxy.cfg"
+readonly CONFIG_FILE="/etc/3proxy/conf/3proxy.cfg"
 
 # Proxy file paths
 readonly PROXY_LIST="/root/proxies.txt"

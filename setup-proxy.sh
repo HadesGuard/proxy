@@ -37,7 +37,15 @@ if ! [[ "$COUNT" =~ ^[0-9]+$ ]] || [ "$COUNT" -le 0 ]; then
   exit 1
 fi
 
-echo "[+] Sẽ tạo $COUNT proxy (user1..user$COUNT) với port RANDOM."
+CUSTOM_CREDENTIALS=0
+read -p "[+] Bạn có muốn tự nhập username/password cho từng proxy? (y/N): " CUSTOM_CHOICE
+CUSTOM_CHOICE="$(echo "${CUSTOM_CHOICE:-}" | tr '[:upper:]' '[:lower:]')"
+if [ "$CUSTOM_CHOICE" = "y" ] || [ "$CUSTOM_CHOICE" = "yes" ]; then
+  CUSTOM_CREDENTIALS=1
+  echo "[+] Sẽ tạo $COUNT proxy với username/password do bạn cung cấp."
+else
+  echo "[+] Sẽ tạo $COUNT proxy (user1..user$COUNT) với password random và port RANDOM."
+fi
 
 # Lấy IP server (có thể override bằng export SERVER_IP=...)
 if [ -z "${SERVER_IP:-}" ]; then
@@ -224,12 +232,74 @@ cleanup_ufw_ports() {
   fi
 }
 
-echo "[+] Đang sinh user/pass + port random..."
+generate_password() {
+  openssl rand -hex 8
+}
+
+if [ $CUSTOM_CREDENTIALS -eq 1 ]; then
+  echo "[+] Đang cấu hình proxies với username/password tùy chọn..."
+else
+  echo "[+] Đang sinh user/pass + port random..."
+fi
 
 for ((i=1; i<=COUNT; i++)); do
-  U="user$i"
-  # Generate stronger password (16 hex chars = 64 bits)
-  P="$(openssl rand -hex 8)"
+  local_default_user="user$i"
+  if [ $CUSTOM_CREDENTIALS -eq 1 ]; then
+    while true; do
+      read -r -p "[+] Nhập username cho proxy #$i (bỏ trống để tạo ngẫu nhiên): " input_user
+      if [ -z "$input_user" ]; then
+        while true; do
+          input_user="user$(( (RANDOM % 900000) + 100000 ))"
+          duplicate=0
+          for existing_user in "${USERS[@]:-}"; do
+            if [ "$existing_user" = "$input_user" ]; then
+              duplicate=1
+              break
+            fi
+          done
+          [ $duplicate -eq 0 ] && break
+        done
+        echo "[+] Đã tạo username ngẫu nhiên cho proxy #$i: $input_user"
+      else
+        if ! [[ "$input_user" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+          echo "[-] Username chỉ được chứa chữ cái, số hoặc các ký tự '.', '_', '-'."
+          continue
+        fi
+        duplicate=0
+        for existing_user in "${USERS[@]:-}"; do
+          if [ "$existing_user" = "$input_user" ]; then
+            duplicate=1
+            break
+          fi
+        done
+        if [ $duplicate -eq 1 ]; then
+          echo "[-] Username đã tồn tại, vui lòng chọn username khác."
+          continue
+        fi
+      fi
+      break
+    done
+
+    while true; do
+      read -s -p "[+] Nhập password cho proxy #$i (bỏ trống để tạo ngẫu nhiên): " input_pass
+      echo
+      if [ -z "$input_pass" ]; then
+        input_pass="$(generate_password)"
+        echo "[+] Đã tạo password ngẫu nhiên cho proxy #$i: $input_pass"
+      fi
+      if [ "${#input_pass}" -lt 4 ]; then
+        echo "[-] Password phải có ít nhất 4 ký tự."
+        continue
+      fi
+      break
+    done
+    U="$input_user"
+    P="$input_pass"
+  else
+    U="$local_default_user"
+    # Generate stronger password (16 hex chars = 64 bits)
+    P="$(generate_password)"
+  fi
   PORT="$(gen_port)"
   
   if [ $? -ne 0 ]; then

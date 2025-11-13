@@ -4,7 +4,7 @@ set -euo pipefail
 
 # Version & Commit Hash
 VERSION="1.0.0"
-COMMIT_HASH="c2846cf"
+COMMIT_HASH="63c666f"
 
 # Colors
 RED='\033[0;31m'
@@ -226,6 +226,26 @@ print_info() {
   echo -e "${BLUE}ℹ️  $1${NC}"
 }
 
+# Helper function to check if service is installed
+is_service_installed() {
+  # Check if service file exists (most reliable)
+  if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
+    return 0
+  fi
+  
+  # Fallback: check with systemctl
+  if systemctl list-unit-files --type=service 2>/dev/null | grep -q "^${SERVICE_NAME}\.service"; then
+    return 0
+  fi
+  
+  # Another fallback: try systemctl status (doesn't require service to be running)
+  if systemctl status "${SERVICE_NAME}.service" --no-pager >/dev/null 2>&1; then
+    return 0
+  fi
+  
+  return 1
+}
+
 show_menu() {
   clear
   print_header "3PROXY MANAGER v$VERSION"
@@ -315,7 +335,7 @@ view_proxy_list() {
 view_service_status() {
   print_header "TRẠNG THÁI SERVICE"
   
-  if systemctl list-unit-files | grep -q "$SERVICE_NAME.service"; then
+  if is_service_installed; then
     echo "Service: $SERVICE_NAME"
     echo
     systemctl status "$SERVICE_NAME.service" --no-pager -l || true
@@ -330,7 +350,7 @@ view_service_status() {
 start_service() {
   print_header "KHỞI ĐỘNG SERVICE"
   
-  if systemctl list-unit-files | grep -q "$SERVICE_NAME.service"; then
+  if is_service_installed; then
     if systemctl is-active --quiet "$SERVICE_NAME.service"; then
       print_warning "Service đã đang chạy."
     else
@@ -354,7 +374,7 @@ start_service() {
 stop_service() {
   print_header "DỪNG SERVICE"
   
-  if systemctl list-unit-files | grep -q "$SERVICE_NAME.service"; then
+  if is_service_installed; then
     if ! systemctl is-active --quiet "$SERVICE_NAME.service"; then
       print_warning "Service đã dừng."
     else
@@ -377,7 +397,7 @@ stop_service() {
 restart_service() {
   print_header "KHỞI ĐỘNG LẠI SERVICE"
   
-  if systemctl list-unit-files | grep -q "$SERVICE_NAME.service"; then
+  if is_service_installed; then
     systemctl restart "$SERVICE_NAME.service"
     sleep 1
     if systemctl is-active --quiet "$SERVICE_NAME.service"; then
@@ -397,7 +417,7 @@ restart_service() {
 view_logs() {
   print_header "LOGS SERVICE"
   
-  if systemctl list-unit-files | grep -q "$SERVICE_NAME.service"; then
+  if is_service_installed; then
     echo "Xem logs gần đây (50 dòng cuối):"
     echo
     journalctl -u "$SERVICE_NAME.service" -n 50 --no-pager || true

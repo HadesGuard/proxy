@@ -194,7 +194,6 @@ done
 
 # Ghi file cấu hình 3proxy
 cat > "$CONF_FILE" <<EOF
-daemon
 nserver 1.1.1.1
 nserver 8.8.8.8
 nscache 65536

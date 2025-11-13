@@ -126,7 +126,27 @@ LOG_DIR="/etc/3proxy/logs"
 BIN_PATH="/usr/local/bin/3proxy"
 CONF_FILE="$CONF_DIR/3proxy.cfg"
 PROXY_LIST="/root/proxies.txt"
+PROXY_LIST_HTTP="/root/proxies_http.txt"
+PROXY_LIST_IPPORT="/root/proxies_ipport.txt"
 SYSTEMD_SERVICE="/etc/systemd/system/3proxy.service"
+
+declare -a OLD_PORTS=()
+if [ -f "$PROXY_LIST_IPPORT" ]; then
+  while IFS=':' read -r old_ip old_port old_user old_pass; do
+    if [[ "$old_port" =~ ^[0-9]+$ ]]; then
+      skip_duplicate=0
+      for existing in "${OLD_PORTS[@]}"; do
+        if [ "$existing" = "$old_port" ]; then
+          skip_duplicate=1
+          break
+        fi
+      done
+      if [ $skip_duplicate -eq 0 ]; then
+        OLD_PORTS+=("$old_port")
+      fi
+    fi
+  done < "$PROXY_LIST_IPPORT"
+fi
 
 mkdir -p "$CONF_DIR" "$LOG_DIR"
 
@@ -178,6 +198,30 @@ gen_port() {
   
   echo "[-] Không thể tìm port trống sau $max_attempts lần thử." >&2
   return 1
+}
+
+cleanup_ufw_ports() {
+  local ports=("$@")
+  if [ ${#ports[@]} -eq 0 ]; then
+    return 0
+  fi
+
+  echo "[+] Thu hồi các port proxy cũ trong UFW (nếu có)..."
+  local removed=0
+  for old_port in "${ports[@]}"; do
+    if ufw status 2>/dev/null | grep -q "$old_port/tcp"; then
+      if ufw --force delete allow "$old_port/tcp" >/dev/null 2>&1; then
+        echo "  - Đã thu hồi port $old_port"
+        removed=$((removed + 1))
+      else
+        echo "  - Không thể thu hồi port $old_port (rule có thể đã bị xóa)"
+      fi
+    fi
+  done
+
+  if [ $removed -eq 0 ]; then
+    echo "  → Không có port cũ nào cần thu hồi."
+  fi
 }
 
 echo "[+] Đang sinh user/pass + port random..."
@@ -279,39 +323,37 @@ if command -v ufw >/dev/null 2>&1; then
     echo "[+] Cho phép SSH port $SSH_PORT (để không bị khóa khỏi server)..."
     ufw allow "$SSH_PORT/tcp" >/dev/null 2>&1 || true
     
-    # Allow all proxy ports
-    echo "[+] Mở $COUNT port proxy trong firewall..."
-    for PORT in "${PORTS[@]}"; do
-      ufw allow "$PORT/tcp" >/dev/null 2>&1 || true
-      echo "  ✓ Đã mở port $PORT"
-    done
-    
     # Enable UFW with default deny
     echo "[+] Kích hoạt UFW (default deny, chỉ cho phép SSH và proxy ports)..."
     ufw --force enable >/dev/null 2>&1 || true
     
-    echo "[+] UFW đã được cấu hình và kích hoạt."
+    echo "[+] UFW đã được kích hoạt."
   else
     echo "[+] UFW đã được kích hoạt, chỉ thêm rules cho proxy ports..."
-    
-    # Ensure SSH is allowed
-    if ! ufw status | grep -q "$SSH_PORT/tcp"; then
-      echo "[+] Cho phép SSH port $SSH_PORT..."
-      ufw allow "$SSH_PORT/tcp" >/dev/null 2>&1 || true
-    fi
-    
-    # Allow all proxy ports
-    echo "[+] Mở $COUNT port proxy trong firewall..."
-    for PORT in "${PORTS[@]}"; do
-      # Check if rule already exists
-      if ! ufw status | grep -q "$PORT/tcp"; then
-        ufw allow "$PORT/tcp" >/dev/null 2>&1 || true
-        echo "  ✓ Đã mở port $PORT"
-      else
-        echo "  → Port $PORT đã được mở trước đó"
-      fi
-    done
   fi
+  
+  # Ensure SSH is allowed
+  if ! ufw status | grep -q "$SSH_PORT/tcp"; then
+    echo "[+] Cho phép SSH port $SSH_PORT..."
+    ufw allow "$SSH_PORT/tcp" >/dev/null 2>&1 || true
+  fi
+  
+  # Cleanup old proxy ports before opening new ones
+  if [ ${#OLD_PORTS[@]} -gt 0 ]; then
+    cleanup_ufw_ports "${OLD_PORTS[@]}"
+  fi
+  
+  # Allow all proxy ports
+  echo "[+] Mở $COUNT port proxy trong firewall..."
+  for PORT in "${PORTS[@]}"; do
+    # Check if rule already exists
+    if ! ufw status | grep -q "$PORT/tcp"; then
+      ufw allow "$PORT/tcp" >/dev/null 2>&1 || true
+      echo "  ✓ Đã mở port $PORT"
+    else
+      echo "  → Port $PORT đã được mở trước đó"
+    fi
+  done
   
   # Show UFW status summary
   echo

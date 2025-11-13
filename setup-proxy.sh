@@ -388,19 +388,22 @@ chown root:root "$PROXY_LIST" "$PROXY_LIST_HTTP" "$PROXY_LIST_IPPORT" 2>/dev/nul
 
 # Verify files were created
 if [ -f "$PROXY_LIST" ] && [ -s "$PROXY_LIST" ]; then
-  echo "[+] ✓ Đã tạo $PROXY_LIST ($(wc -l < "$PROXY_LIST") dòng)"
+  line_count=$(wc -l < "$PROXY_LIST" 2>/dev/null || echo "0")
+  echo "[+] ✓ Đã tạo $PROXY_LIST ($line_count dòng)"
 else
   echo "[-] LỖI: Không tạo được $PROXY_LIST"
 fi
 
 if [ -f "$PROXY_LIST_HTTP" ] && [ -s "$PROXY_LIST_HTTP" ]; then
-  echo "[+] ✓ Đã tạo $PROXY_LIST_HTTP ($(wc -l < "$PROXY_LIST_HTTP") dòng)"
+  line_count=$(wc -l < "$PROXY_LIST_HTTP" 2>/dev/null || echo "0")
+  echo "[+] ✓ Đã tạo $PROXY_LIST_HTTP ($line_count dòng)"
 else
   echo "[-] LỖI: Không tạo được $PROXY_LIST_HTTP"
 fi
 
 if [ -f "$PROXY_LIST_IPPORT" ] && [ -s "$PROXY_LIST_IPPORT" ]; then
-  echo "[+] ✓ Đã tạo $PROXY_LIST_IPPORT ($(wc -l < "$PROXY_LIST_IPPORT") dòng)"
+  line_count=$(wc -l < "$PROXY_LIST_IPPORT" 2>/dev/null || echo "0")
+  echo "[+] ✓ Đã tạo $PROXY_LIST_IPPORT ($line_count dòng)"
 else
   echo "[-] LỖI: Không tạo được $PROXY_LIST_IPPORT"
 fi
@@ -442,8 +445,12 @@ echo "  → $PROXY_LIST_HTTP (http://user:pass@ip:port)"
 echo "  → $PROXY_LIST_IPPORT (ip:port:user:pass)"
 echo
 echo "🧪 Test proxy:"
-first_proxy=$(head -n 1 "$PROXY_LIST")
-echo "  curl -x http://$first_proxy https://api.ipify.org"
+first_proxy=$(head -n 1 "$PROXY_LIST" 2>/dev/null || echo "")
+if [ -n "$first_proxy" ]; then
+  echo "  curl -x http://$first_proxy https://api.ipify.org"
+else
+  echo "  (Không thể đọc proxy list để test)"
+fi
 echo
 echo "📖 Xem danh sách:"
 echo "  cat $PROXY_LIST"

@@ -41,7 +41,9 @@ else
 COMMIT_HASH=\"$COMMIT_HASH\"
 " "$SCRIPT_FILE"
   else
-    sed -i "/^VERSION=/a COMMIT_HASH=\"$COMMIT_HASH\"" "$SCRIPT_FILE"
+    # Linux: need newline after 'a' command
+    sed -i "/^VERSION=/a\\
+COMMIT_HASH=\"$COMMIT_HASH\"" "$SCRIPT_FILE"
   fi
   echo "✅ Added COMMIT_HASH: $COMMIT_HASH"
 fi

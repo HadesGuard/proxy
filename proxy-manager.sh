@@ -11,12 +11,45 @@ NC='\033[0m' # No Color
 
 # Paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GITHUB_REPO="https://raw.githubusercontent.com/HadesGuard/proxy/main"
 CHECK_SCRIPT="$SCRIPT_DIR/check-vps.sh"
 SETUP_SCRIPT="$SCRIPT_DIR/setup-proxy.sh"
 PROXY_LIST="/root/proxies.txt"
 PROXY_LIST_HTTP="/root/proxies_http.txt"
 PROXY_LIST_IPPORT="/root/proxies_ipport.txt"
 SERVICE_NAME="3proxy"
+TMP_SCRIPT_DIR="/tmp/proxy-scripts"
+
+# Function to get script (local first, then download from GitHub)
+get_script() {
+  local script_name=$1
+  local local_path="$SCRIPT_DIR/$script_name"
+  local tmp_path="$TMP_SCRIPT_DIR/$script_name"
+  
+  # Try local first
+  if [ -f "$local_path" ]; then
+    echo "$local_path"
+    return 0
+  fi
+  
+  # Try tmp directory
+  if [ -f "$tmp_path" ]; then
+    echo "$tmp_path"
+    return 0
+  fi
+  
+  # Download from GitHub
+  mkdir -p "$TMP_SCRIPT_DIR"
+  echo -e "${YELLOW}[+] Đang tải $script_name từ GitHub...${NC}" >&2
+  if curl -sSL "$GITHUB_REPO/$script_name" -o "$tmp_path" 2>/dev/null; then
+    chmod +x "$tmp_path"
+    echo "$tmp_path"
+    return 0
+  else
+    echo ""
+    return 1
+  fi
+}
 
 print_header() {
   echo
@@ -61,10 +94,11 @@ show_menu() {
 
 check_vps() {
   print_header "KIỂM TRA VPS"
-  if [ -f "$CHECK_SCRIPT" ]; then
-    bash "$CHECK_SCRIPT"
+  local script_path=$(get_script "check-vps.sh")
+  if [ -n "$script_path" ] && [ -f "$script_path" ]; then
+    bash "$script_path"
   else
-    print_error "Không tìm thấy script check-vps.sh"
+    print_error "Không thể tải script check-vps.sh"
     return 1
   fi
   echo
@@ -73,10 +107,11 @@ check_vps() {
 
 setup_proxy() {
   print_header "CÀI ĐẶT PROXY"
-  if [ -f "$SETUP_SCRIPT" ]; then
-    bash "$SETUP_SCRIPT"
+  local script_path=$(get_script "setup-proxy.sh")
+  if [ -n "$script_path" ] && [ -f "$script_path" ]; then
+    bash "$script_path"
   else
-    print_error "Không tìm thấy script setup-proxy.sh"
+    print_error "Không thể tải script setup-proxy.sh"
     return 1
   fi
   echo
